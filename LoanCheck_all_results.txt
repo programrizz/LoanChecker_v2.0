@@ -1,0 +1,451 @@
+
+====================================================================================================
+1. DATA AND MODELS
+====================================================================================================
+Source: UCI, fetch_ucirepo(id=144)   applicants: 1000   under 25: 149   25+: 851
+Cut-off (from the 5:1 cost rule): 0.8333
+
+--- 1.1 First look: who actually repaid
+             applicants  repaid (good)  did not repay (bad)  actually good risk
+Under 25            149             88                   61              0.5906
+25 or older         851            612                  239              0.7192
+
+--- 1.1b Label check against South German Credit
+             detail                              label we use                          corrected codebook rows that agree
+             status                                  0-200 DM                                    0-200 DM        62 of 62
+             status                        < 0 DM (overdrawn)                                      < 0 DM      266 of 266
+             status               >= 200 DM or salary account      >= 200 DM / salary for at least 1 year      389 of 389
+             status                       no checking account                         no checking account      273 of 273
+     credit history        all credits at this bank paid duly     all credits at this bank paid back duly      289 of 289
+     credit history      critical account / credits elsewhere    critical account/other credits elsewhere        48 of 48
+     credit history         existing credits paid duly so far    existing credits paid back duly till now        86 of 86
+     credit history          no credits or all paid back duly no credits taken/all credits paid back duly      527 of 527
+     credit history                       past payment delays             delay in paying off in the past        40 of 40
+            savings                                100-500 DM                                  100-500 DM        61 of 61
+            savings                               500-1000 DM                                 500-1000 DM        47 of 47
+            savings                                  < 100 DM                                    < 100 DM      103 of 103
+            savings                                >= 1000 DM                                  >= 1000 DM      182 of 182
+            savings              unknown / no savings account                  unknown/no savings account      597 of 597
+personal status sex      female (not single) or male (single)        female : non-single or male : single      309 of 309
+personal status sex                            female: single                             female : single        92 of 92
+personal status sex                  male: divorced/separated                   male : divorced/separated        49 of 49
+personal status sex                     male: married/widowed                      male : married/widowed      540 of 540
+           property building society savings / life insurance   building soc. savings agr./life insurance      329 of 329
+           property                              car or other                                car or other      230 of 230
+           property                     no property / unknown                       unknown / no property      277 of 277
+           property                               real estate                                 real estate      154 of 154
+            housing                            lives for free                                    for free      179 of 179
+            housing                                 owns home                                         own      107 of 108
+            housing                                     rents                                        rent      703 of 703
+     foreign worker                                        no                                          no      948 of 953
+     foreign worker                                       yes                                         yes        32 of 37
+   installment rate                           1 (band 1 of 4)                                       >= 35      136 of 136
+   installment rate                           2 (band 2 of 4)                              25 <= ... < 35      230 of 230
+   installment rate                           3 (band 3 of 4)                              20 <= ... < 25      155 of 155
+   installment rate                           4 (band 4 of 4)                                        < 20      469 of 469
+      people liable                                1 (0 to 2)                                      0 to 2      835 of 835
+      people liable                             2 (3 or more)                                   3 or more      155 of 155
+
+--- 1.2 Baselines
+                  accuracy  cost  approval rate  bad risks approved  good risks rejected
+Approve everyone    0.7000 1,500              1                 300               0.0000
+Reject everyone     0.3000   700         0.0000              0.0000                  700
+
+--- 1.4 Models: accuracy, cost, approvals
+                       AUC  accuracy  accuracy ± (fold sd)  cost  cost ± (fold sd, x5)  approval rate  accuracy at 50% threshold  cost at 50% threshold
+Logistic regression 0.7865    0.5850                0.0170   547               64.4787         0.3510                     0.7500                    946
+Random forest       0.7772    0.5550                0.0146   553               83.8600         0.3090                     0.7580                    970
+Gradient boosting   0.7673    0.5760                0.0268   552               79.1044         0.3400                     0.7400                  1,048
+Approve everyone       NaN    0.7000                   NaN 1,500                   NaN              1                        NaN                    NaN
+Reject everyone        NaN    0.3000                   NaN   700                   NaN         0.0000                        NaN                    NaN
+
+--- 1.4b Full scorecard at 5/6
+                     repaid, approved (TP)  defaulted, approved (FP: cost 5)  repaid, rejected (FN: cost 1)  defaulted, rejected (TN)  precision  recall  specificity  balanced accuracy  ROC AUC  PR AUC  Brier score  cost
+Logistic regression                    318                                33                            382                       267     0.9060  0.4543       0.8900             0.6721   0.7865  0.8921       0.1646   547
+Random forest                          282                                27                            418                       273     0.9126  0.4029       0.9100             0.6564   0.7772  0.8835       0.1663   553
+Gradient boosting                      308                                32                            392                       268     0.9059  0.4400       0.8933             0.6667   0.7673  0.8768       0.1702   552
+
+--- 1.4c Overfitting check (training vs unseen accuracy)
+                     in-sample accuracy (training data)  out-of-sample accuracy (unseen data)   drop
+Logistic regression                              0.7890                                0.7500 0.0390
+Random forest                                    0.9623                                0.7580 0.2043
+Gradient boosting                                0.8280                                0.7400 0.0880
+
+--- 1.5 Model choice
+  Cheapest: Logistic regression   In the running: ['Logistic regression', 'Random forest', 'Gradient boosting']   CHOSEN: Logistic regression
+  Saving vs reject-everyone, 95% interval: 85 to 215 cost points
+
+--- 1.5 Three models side by side
+  * Logistic regression
+      How it works: adds up one weight per detail, then turns the total into a probability
+      Interpretability: high: every weight can be read directly (section 3.2)
+      Non-linear patterns and combinations: no, unless we add them by hand
+      Computational cost: lowest: trains in a blink
+      ROC AUC (unseen data): 0.787
+      Cost at 5/6: 547
+      Overfitting (training minus unseen accuracy): 3.9%
+      Age gap among good risks (points): +19.5
+      Brier score (lower = more honest probabilities): 0.165
+  * Random forest
+      How it works: hundreds of decision trees, each trained on a random slice of the data, vote
+      Interpretability: low: needs indirect tools such as permutation importance
+      Non-linear patterns and combinations: yes
+      Computational cost: medium
+      ROC AUC (unseen data): 0.777
+      Cost at 5/6: 553
+      Overfitting (training minus unseen accuracy): 20.4%
+      Age gap among good risks (points): +31.8
+      Brier score (lower = more honest probabilities): 0.166
+  * Gradient boosting
+      How it works: small trees built one after another, each fixing the last one's mistakes
+      Interpretability: low: needs indirect tools such as permutation importance
+      Non-linear patterns and combinations: yes (here trees 2 to 3 levels deep, so combinations of 2 to 3 details)
+      Computational cost: medium
+      ROC AUC (unseen data): 0.767
+      Cost at 5/6: 552
+      Overfitting (training minus unseen accuracy): 8.8%
+      Age gap among good risks (points): +26.9
+      Brier score (lower = more honest probabilities): 0.170
+
+====================================================================================================
+2. FAIRNESS
+====================================================================================================
+
+--- 2.1 Approval by age group (chosen model, 5/6)
+             approval rate  approval rate among good risks  actual good-risk rate
+Under 25            0.1879                          0.2841                 0.5906
+25 or older         0.3796                          0.4788                 0.7192
+
+--- 2.1 Gaps (point estimates)
+  approval gap: 0.1916
+  good-risk approval gap: 0.1947
+  approval ratio (young / older): 0.4951
+
+--- 2.1 Gaps (95% confidence intervals)
+  approval gap: 0.1203 to 0.2611
+  good-risk approval gap: 0.0875 to 0.2972
+  approval ratio (young / older): 0.3286 to 0.6782
+
+--- 2.2 Real difference in repayment rate (25+ minus under 25): +12.9 points
+
+--- 2.2 Fairness of each model
+  Logistic regression: {'accuracy (50% threshold)': np.float64(0.75), 'accuracy': np.float64(0.585), 'cost': np.float64(547.0), 'approval gap (points)': np.float64(19.163400342273988), 'gap 95% CI': '+12 to +26', 'good-risk approval gap (points)': np.float64(19.466726084373143), 'approval ratio': np.float64(0.49510669686454595)}
+  Random forest: {'accuracy (50% threshold)': np.float64(0.758), 'accuracy': np.float64(0.555), 'cost': np.float64(553.0), 'approval gap (points)': np.float64(24.480476975370472), 'gap 95% CI': '+18 to +30', 'good-risk approval gap (points)': np.float64(31.781045751633986), 'approval ratio': np.float64(0.29139843857005887)}
+  Gradient boosting: {'accuracy (50% threshold)': np.float64(0.74), 'accuracy': np.float64(0.576), 'cost': np.float64(552.0), 'approval gap (points)': np.float64(21.814052161294644), 'gap 95% CI': '+15 to +28', 'good-risk approval gap (points)': np.float64(26.931075460487218), 'approval ratio': np.float64(0.4143924798340144)}
+
+--- 2.4 Every age cut-off from 22 to 35
+                             people in group  approved (count)  rejected (count)  approved, younger  approved, older  approval gap (points)  good-risk approval gap (points)  ratio
+younger group                                                                                                                                                                      
+under 22                                  30                 6                24             0.2000           0.3557                15.5670                          14.2360 0.5623
+under 23                                  57                10                47             0.1754           0.3616                18.6173                          26.7669 0.4852
+under 24                                 105                19                86             0.1810           0.3709                18.9997                          22.0129 0.4878
+under 25  (ours)                         149                28               121             0.1879           0.3796                19.1634                          19.4667 0.4951
+under 26  (= 25 or younger)              190                37               153             0.1947           0.3877                19.2917                          20.4622 0.5023
+under 27                                 240                53               187             0.2208           0.3921                17.1272                          17.5906 0.5632
+under 28                                 291                66               225             0.2268           0.4020                17.5170                          18.8659 0.5642
+under 29                                 334                77               257             0.2305           0.4114                18.0872                          19.8307 0.5604
+under 30                                 371                88               283             0.2372           0.4181                18.0927                          19.4527 0.5673
+under 31                                 411                97               314             0.2360           0.4312                19.5230                          21.6077 0.5473
+under 32                                 449               114               335             0.2539           0.4301                17.6229                          19.8654 0.5903
+under 33                                 483               128               355             0.2650           0.4313                16.6324                          18.5281 0.6144
+under 34                                 516               140               376             0.2713           0.4360                16.4633                          17.2807 0.6224
+under 35                                 548               149               399             0.2719           0.4469                17.5005                          17.5627 0.6084
+
+--- 2.4 Age bands with counts
+             applicants  approved  rejected  approval rate 95% interval  actually repaid repaid, of whom approved
+age band                                                                                                         
+Under 25            149        28       121         0.1879   13% to 25%           0.5906                 25 of 88
+25–29               222        60       162         0.2703   21% to 33%           0.6577                51 of 146
+30–39               330       129       201         0.3909   34% to 44%           0.7424               121 of 245
+40–59               248       111       137         0.4476   39% to 51%           0.7379               101 of 183
+60 or older          51        23        28         0.4510   31% to 59%           0.7451                 20 of 38
+
+--- 2.6 Realistic 5% bad-loan bank: equivalent cut-off 0.3804
+
+--- 2.6 Approval by group at the realistic rate
+             approval rate  approval rate among good risks  actual good-risk rate
+Under 25            0.8389                          0.9205                 0.5906
+25 or older         0.9177                          0.9657                 0.7192
+
+--- 2.6 Gaps at the realistic rate
+  approval gap: 0.0788
+  good-risk approval gap: 0.0452
+  approval ratio (young / older): 0.9141
+
+--- 2.6 95% intervals at the realistic rate
+  approval gap: 0.0209 to 0.1426
+  good-risk approval gap: -0.0088 to 0.1113
+  approval ratio (young / older): 0.8462 to 0.9769
+
+====================================================================================================
+3. WHAT DRIVES THE GAP, AND WHAT EACH MODEL RELIES ON
+====================================================================================================
+
+--- 3. Contribution of each detail to the age score gap (log-odds)
+status                     0.2194
+age                        0.2000
+personal_status_sex        0.1208
+housing                    0.1078
+credit_history             0.0918
+telephone                  0.0467
+savings                    0.0437
+employment_duration        0.0389
+foreign_worker             0.0106
+job                        0.0030
+other_debtors              0.0013
+present_residence          0.0003
+duration                  -0.0127
+people_liable             -0.0233
+property                  -0.0271
+other_installment_plans   -0.0296
+amount                    -0.0349
+number_credits            -0.0361
+purpose                   -0.0431
+installment_rate          -0.0638
+
+--- 3.2 Logistic regression: 15 strongest terms (odds ratios)
+                                                                                                          term  coefficient (log-odds)  odds ratio                    direction  fold sd same direction in all 5 folds
+cat__status_>= 200 DM or salary account                                    status: >= 200 DM or salary account                  0.7798      2.1810  raises the odds of repaying   0.0811                           yes
+cat__status_no checking account                                                    status: no checking account                 -0.6098      0.5434  lowers the odds of repaying   0.0590                           yes
+cat__credit_history_all credits at this bank paid duly      credit history: all credits at this bank paid duly                  0.5703      1.7688  raises the odds of repaying   0.0614                           yes
+cat__purpose_car (new)                                                                      purpose: car (new)                  0.5165      1.6761  raises the odds of repaying   0.1627                           yes
+cat__purpose_other                                                                              purpose: other                 -0.4836      0.6166  lowers the odds of repaying   0.1073                           yes
+cat__savings_unknown / no savings account                                savings: unknown / no savings account                 -0.4246      0.6540  lowers the odds of repaying   0.1033                           yes
+cat__employment_duration_4-7 years                                              employment duration: 4-7 years                  0.3534      1.4239  raises the odds of repaying   0.1152                           yes
+cat__credit_history_critical account / credits elsewhere  credit history: critical account / credits elsewhere                 -0.3386      0.7128  lowers the odds of repaying   0.1091                           yes
+cat__other_debtors_guarantor                                                          other debtors: guarantor                  0.3295      1.3902  raises the odds of repaying   0.2423                           yes
+num__duration                                                           duration (1 standard deviation higher)                 -0.3144      0.7302  lowers the odds of repaying   0.0249                           yes
+cat__savings_>= 1000 DM                                                                    savings: >= 1000 DM                  0.3132      1.3677  raises the odds of repaying   0.0623                           yes
+cat__purpose_repairs                                                                          purpose: repairs                 -0.3053      0.7369  lowers the odds of repaying   0.1969                           yes
+num__installment_rate                                           installment rate (1 standard deviation higher)                 -0.3019      0.7394  lowers the odds of repaying   0.0538                           yes
+cat__personal_status_sex_male: married/widowed                      personal status sex: male: married/widowed                  0.2990      1.3485  raises the odds of repaying   0.0583                           yes
+cat__other_installment_plans_none                                                other installment plans: none                  0.2965      1.3451  raises the odds of repaying   0.0457                           yes
+
+--- 3.2 Logistic regression: spread of contribution per detail
+                         spread of contribution (log-odds)  relative weight
+status                                              0.5988           0.1543
+purpose                                             0.3148           0.0811
+duration                                            0.3145           0.0810
+installment rate                                    0.3021           0.0778
+savings                                             0.3019           0.0778
+credit history                                      0.2948           0.0759
+amount                                              0.2685           0.0692
+personal status sex                                 0.2069           0.0533
+other installment plans                             0.1816           0.0468
+employment duration                                 0.1801           0.0464
+age                                                 0.1495           0.0385
+property                                            0.1456           0.0375
+housing                                             0.1316           0.0339
+telephone                                           0.1201           0.0309
+other debtors                                       0.1017           0.0262
+foreign worker                                      0.1006           0.0259
+number credits                                      0.0862           0.0222
+people liable                                       0.0625           0.0161
+job                                                 0.0157           0.0040
+present residence                                   0.0047           0.0012
+
+--- 3.2 Permutation importance, all three models
+                         LR: AUC drop  LR: fold sd  LR: rank  RF: AUC drop  RF: fold sd  RF: rank  GB: AUC drop  GB: fold sd  GB: rank
+status                         0.0894       0.0133         1        0.1284       0.0214         1        0.1119       0.0107         1
+duration                       0.0212       0.0101         4        0.0266       0.0043         2        0.0334       0.0065         2
+credit history                 0.0213       0.0101         3        0.0194       0.0091         4        0.0228       0.0072         3
+amount                         0.0141       0.0064         7        0.0212       0.0117         3        0.0113       0.0092         5
+purpose                        0.0215       0.0062         2        0.0035       0.0052         9        0.0186       0.0042         4
+savings                        0.0157       0.0101         6        0.0118       0.0077         5        0.0104       0.0096         6
+installment rate               0.0165       0.0062         5        0.0039       0.0070         8        0.0028       0.0032         9
+other installment plans        0.0065       0.0032        10        0.0066       0.0067         6        0.0089       0.0050         7
+age                            0.0036       0.0038        11        0.0048       0.0083         7        0.0061       0.0038         8
+personal status sex            0.0108       0.0057         8        0.0010       0.0074        14        0.0003       0.0021        14
+employment duration            0.0078       0.0062         9        0.0021       0.0082        11        0.0007       0.0061        13
+housing                        0.0026       0.0034        12        0.0012       0.0042        13        0.0010       0.0013        11
+property                       0.0003       0.0076        16        0.0027       0.0070        10        0.0010       0.0024        10
+telephone                      0.0026       0.0037        13        0.0005       0.0049        17     5.952e-05       0.0014        16
+other debtors                  0.0004       0.0083        15        0.0019       0.0051        12        0.0009       0.0105        12
+foreign worker                 0.0023       0.0029        14       -0.0002       0.0015        19     1.905e-05       0.0013        17
+number credits                -0.0002       0.0033        17        0.0008       0.0007        15       -0.0010       0.0030        20
+job                           -0.0012       0.0017        18        0.0006       0.0027        16       -0.0003       0.0023        19
+present residence             -0.0015       0.0025        19       -0.0001       0.0044        18        0.0002       0.0003        15
+people liable                 -0.0023       0.0033        20       -0.0017       0.0014        20       -0.0001       0.0003        18
+
+--- 3.3 Hypothetical applicant (age 30) step by step
+                                                    this applicant  effect on score (log-odds) pushes towards
+telephone                                                       no                     -0.0989     don't lend
+duration                                                        24                     -0.0808     don't lend
+age                                                             30                     -0.0729     don't lend
+credit history                   existing credits paid duly so far                     -0.0534     don't lend
+foreign worker                                                  no                     -0.0197     don't lend
+other debtors                                                 none                     -0.0192     don't lend
+property                 building society savings / life insurance                     -0.0161     don't lend
+job                                                        skilled                     -0.0105     don't lend
+installment rate                                   3 (band 3 of 4)                     -0.0073     don't lend
+present residence                                    3 (4-7 years)                     -0.0007     don't lend
+people liable                                           1 (0 to 2)                      0.0267           lend
+number credits                                               1 (1)                      0.0607           lend
+housing                                                      rents                      0.0722           lend
+amount                                                        2500                      0.0734           lend
+other installment plans                                       none                      0.0865           lend
+personal status sex                          male: married/widowed                      0.1829           lend
+savings                                                 100-500 DM                      0.2070           lend
+purpose                                                  furniture                      0.2163           lend
+employment duration                                      4-7 years                      0.3524           lend
+status                                 >= 200 DM or salary account                      0.7080           lend
+  Final chance of repaying: 0.9376 -> LEND
+
+====================================================================================================
+4. PROXIES
+====================================================================================================
+All details together (age hidden) predict 'under 25' with AUC 0.7992
+
+--- 4.1 Each detail on its own: AUC for guessing 'under 25' (0.5 = guessing)
+personal_status_sex       0.6792
+housing                   0.6648
+employment_duration       0.6283
+credit_history            0.5868
+purpose                   0.5776
+number_credits            0.5754
+telephone                 0.5683
+people_liable             0.5610
+status                    0.5574
+amount                    0.5406
+installment_rate          0.5396
+job                       0.5264
+savings                   0.5145
+duration                  0.5088
+foreign_worker            0.4992
+other_installment_plans   0.4969
+property                  0.4914
+other_debtors             0.4911
+present_residence         0.4840
+  Top 3 proxies: ['personal_status_sex', 'housing', 'employment_duration']
+
+====================================================================================================
+5. FIXES AND THEIR COST
+====================================================================================================
+
+--- 5. Every fix compared
+                                                                           accuracy  cost  approved, under 25  approved, 25+  gap (points) gap 95% CI  ratio  good-risk gap (points)  extra cost vs original
+option                                                                                                                                                                                                      
+Original (sees age)                                                          0.5850   547              0.1879         0.3796       19.1634   12 to 26 0.4951                 19.4667                  0.0000
+Age deleted                                                                  0.5850   539              0.1946         0.3737       17.9047   11 to 25 0.5209                 17.8402                 -0.0146
+Age + top 3 proxies deleted                                                  0.5720   544              0.2282         0.3478       11.9638    4 to 19 0.6560                 10.1901                 -0.0055
+Age deleted + reweighing                                                     0.5860   538              0.2215         0.3702       14.8676    7 to 23 0.5983                 12.8045                 -0.0165
+Separate threshold: ratio 0.8 (under-25 threshold 0.76)                      0.5990   541              0.3087         0.3796        7.0829   -1 to 16 0.8134                  1.2849                 -0.0110
+Separate threshold: equal chance for good risks (under-25 threshold 0.74)    0.6010   543              0.3356         0.3796        4.3983   -4 to 13 0.8841                 -2.1242                 -0.0073
+Separate threshold: equal approval rates (under-25 threshold 0.72)           0.6020   554              0.3826         0.3796       -0.2997    -9 to 8 1.0079                 -6.6696                  0.0128
+Separate threshold: ratio 0.8, chosen out of fold                            0.5970   547              0.3087         0.3796        7.0829   -1 to 16 0.8134                  2.4213                  0.0000
+  Under-25 cut-offs chosen out of fold: [0.75, 0.77, 0.79, 0.74, 0.75]
+  Cost difference (out-of-fold fix minus original), 95% interval: -17 to +21
+
+--- 5. Approval by group after the out-of-fold fix
+             approval rate  approval rate among good risks  actual good-risk rate
+Under 25            0.3087                          0.4545                 0.5906
+25 or older         0.3796                          0.4788                 0.7192
+
+--- 5. Gaps after the fix
+  approval gap: 0.0708
+  good-risk approval gap: 0.0242
+  approval ratio (young / older): 0.8134
+
+--- 5. 95% intervals after the fix
+  approval gap: -0.0111 to 0.1553
+  good-risk approval gap: -0.0888 to 0.1402
+  approval ratio (young / older): 0.6019 to 1.0298
+
+====================================================================================================
+6. FLIP TEST, DATA AUDIT, DEEPER CHECKS
+====================================================================================================
+Under-25s rejected now but approved at 35: 2 of 149
+25+ approved now but rejected at 22: 45 of 851
+
+--- 6.2 Data audit
+  * Sex cannot be recovered
+      evidence in our data: family status codes: male: married/widowed = 548, female (not single) or male (single) = 310, female: single = 92, male: divorced/separated = 50
+      why it matters: One code mixes women who are not single with single men, so any 'women' analysis is meaningless. Many published fairness studies used it anyway.
+  * The Statlog codebook mislabels categories (fixed)
+      evidence in our data: codes matched to the corrected South German Credit data in section 1.1b
+      why it matters: With the old labels, 'no checking account' looked like the strongest sign of a good borrower and 'renting' looked like a sign of youth. Those codes really mean '200 DM or more, or a salary account' and 'lives for free'. Explanations built on the old labels would be wrong, even though the numbers are not affected. We use the corrected labels throughout.
+  * Some 'numbers' are really ordered categories
+      evidence in our data: installment rate, years at address, number of credits and people supported only take values 1 to 4
+      why it matters: The model treats them as evenly spaced steps, which they may not be.
+  * Installment rate's meaning is disputed
+      evidence in our data: repaid: band 1 75%, band 2 73%, band 3 71%, band 4 67%
+      why it matters: Statlog says band 4 is the heaviest repayment burden; the corrected codebook says it is the lightest. Band 4 repaid least, which fits Statlog better. So we use this detail for prediction but don't claim which way the burden runs.
+  * Bad loans heavily oversampled
+      evidence in our data: 30% bad in the data
+      why it matters: The real share of bad loans is reported to be only about 5% (Grömping 2019, relaying the original German sources), so costs and default chances are inflated, and approval rates are too low, compared with a real bank (section 2.6).
+  * Old data
+      evidence in our data: loans from 1973–75
+      why it matters: Lending, jobs and housing for young people have changed a lot since then.
+  * Labels are real outcomes, but only for people who got loans
+      evidence in our data: all 1,000 rows are granted credits; 'good' means the contract was repaid as agreed
+      why it matters: The label isn't a banker's opinion, it's what happened. But applicants the bank rejected never appear, so we can't see whether they would have repaid, and any past bias in who got a loan is baked into the data.
+
+--- 6.3.1 Calibration by age group
+                                          people  model predicted  actually repaid 95% interval
+group       model's confidence                                                                 
+Under 25    under 50%                         49           0.3605           0.3878   26% to 53%
+            50–65%                            30           0.5759           0.4667   28% to 64%
+            65–75%                            22           0.7060           0.5909   38% to 79%
+            75–83% (just below the line)      20           0.7881           0.8500  67% to 100%
+            above 83% (approved)              28           0.8971           0.8929  75% to 100%
+25 or older under 50%                        153           0.3652           0.3725   30% to 45%
+            50–65%                           133           0.5786           0.5940   51% to 68%
+            65–75%                           113           0.7013           0.6726   58% to 75%
+            75–83% (just below the line)     129           0.7939           0.8295   76% to 89%
+            above 83% (approved)             323           0.9092           0.9071   87% to 94%
+
+--- 6.3.2 Like-for-like gap (similar finances)
+                                                                                                                 raw gap (points)  like-for-like gap (points)   95% interval  share of raw gap left  young applicants matched
+matching                                    policy                               gap measured among                                                                                                                          
+main: amount and length split at the median Original model (5/6)                 all applicants                           19.1634                     11.2566  +5.1 to +17.8                 0.5874                         1
+                                                                                 good risks only (main measure)           19.4667                     13.5836  +4.7 to +23.3                 0.6978                    0.9659
+                                            Our fix (cut-off chosen out of fold) all applicants                            7.0829                     -0.8240   -8.2 to +6.6                    NaN                         1
+                                                                                 good risks only (main measure)            2.4213                     -4.0635  -14.5 to +6.4                    NaN                    0.9659
+check: amount and length split in thirds    Original model (5/6)                 all applicants                           19.1634                     10.1154  +3.4 to +16.2                 0.5279                    0.9664
+                                                                                 good risks only (main measure)           19.4667                      9.8352  -0.2 to +19.2                 0.5052                    0.8864
+                                            Our fix (cut-off chosen out of fold) all applicants                            7.0829                     -2.3846   -9.6 to +3.7                    NaN                    0.9664
+                                                                                 good risks only (main measure)            2.4213                     -9.3956  -19.3 to +1.1                    NaN                    0.8864
+
+--- 6.3.3 Good risks by age band, before and after the fix
+             good risks in band  approved before fix  approved after fix after: 95% interval  leapfrogged  of whom repaid
+age band                                                                                                                 
+Under 25                     88               0.2841              0.4545          35% to 56%            0               0
+25–29                       146               0.3493              0.3493          27% to 43%           33              28
+30–39                       245               0.4939              0.4939          43% to 56%           47              40
+40–59                       183               0.5519              0.5519          48% to 62%           34              32
+60 or older                  38               0.5263              0.5263          36% to 69%            8               6
+
+--- 6.3.3 Original vs fix vs age-blind lower cut-off
+                                                cost cost vs original, 95% interval  approved  good-risk gap (points) gap 95% interval  ratio (young / older)  people leapfrogged
+policy                                                                                                                                                                           
+Original: 5/6 for everyone                       547                              –    0.3510                 19.4667        +9 to +30                 0.4951                   0
+Our fix: lower cut-off for under-25s only        547                     -17 to +21    0.3690                  2.4213        -9 to +14                 0.8134                 122
+Age-blind: the same lower cut-off for everyone   521                     -73 to +24    0.4910                 19.7415        +9 to +31                 0.5904                   0
+
+====================================================================================================
+7. TAIL RISK
+====================================================================================================
+
+--- 7.1 Cost in money (DM)
+                                          cost in DM  cost (count, 5:1)  cost in DM, vs original
+Approve everyone                           1,181,438              1,500                   2.3970
+Reject everyone                              417,964                700                   0.2018
+Original model (5/6)                         347,787                547                   0.0000
+Fair fix: separate threshold (ratio 0.8)     344,812                541                  -0.0086
+Fair fix: age deleted + reweighing           342,737                538                  -0.0145
+
+--- 7.2 Losses in normal times, recessions and stress
+                                              expected loss  VaR 95%  VaR 99%  VaR 99% as % of money lent
+Normal times (independent)                           81,359  110,367  123,793                      0.1407
+With recessions (shared economy)                     81,330  220,705  321,653                      0.3655
+Stress: default chances doubled + recessions        162,444  370,242  483,997                      0.5499
+
+--- 7.3 Tail risk of each fix
+                                          loans  young borrowers  money lent (DM)  expected loss  VaR 99% (recessions)  VaR 99% as % lent  share of lending to under-25s
+policy                                                                                                                                                                  
+Original model (5/6)                        351               28          880,083         81,330               321,653             0.3655                         0.0680
+Fair fix: separate threshold (ratio 0.8)    369               46          916,043         88,558               340,935             0.3722                         0.1046
+Fair fix: age deleted + reweighing          348               33          880,785         82,322               326,117             0.3703                         0.0804
+
+====================================================================================================
+Every expected result was found.

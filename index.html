@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoanChecker: a fairness audit of a credit risk model</title>
+<meta name="description" content="LoanChecker is an explainable credit risk model with a fairness audit on the UCI German Credit data. It measures how often reliable under 25s are approved, traces why, and tests what closing the gap costs.">
+<meta property="og:title" content="LoanChecker: a fairness audit of a credit risk model">
+<meta property="og:description" content="Of applicants who went on to repay, the model approved 28% of under 25s and 48% of everyone older. LoanChecker traces why, and tests what it costs to close the gap.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#F2F4F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#151C22" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231F5E45'/%3E%3Cpath d='M9 16h14' stroke='%23F2F4F1' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='9' cy='16' r='4.5' fill='%23eb6834' stroke='%231F5E45' stroke-width='1.5'/%3E%3Ccircle cx='23' cy='16' r='4.5' fill='%233987e5' stroke='%231F5E45' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+@property --v { syntax: '<number>'; inherits: false; initial-value: 0; }
+@property --a { syntax: '<number>'; inherits: false; initial-value: 0; }
+
+:root {
+  color-scheme: light;
+  --paper: #F2F4F1;
+  --panel: #FBFCFA;
+  --tint: #E4EBE5;
+  --ink: #1A2733;
+  --ink-2: #485561;
+  --ink-3: #5E6A74;
+  --rule: #C6D0C9;
+  --grid: #DDE3DE;
+  --ledger: #1F5E45;
+  --ledger-hover: #154532;
+  --on-ledger: #F2F4F1;
+  --young: #eb6834;
+  --older: #2a78d6;
+  --whisker: #1A2733;
+  --sans: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --measure: 42rem;
+  --note: 15rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --paper: #151C22;
+    --panel: #1B242C;
+    --tint: #22302B;
+    --ink: #E7ECE8;
+    --ink-2: #B4BFBA;
+    --ink-3: #9AA6A1;
+    --rule: #33424B;
+    --grid: #2A3740;
+    --ledger: #7CC9A3;
+    --ledger-hover: #A3DCBF;
+    --on-ledger: #102019;
+    --young: #d95926;
+    --older: #3987e5;
+    --whisker: #E7ECE8;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.125rem;
+  line-height: 1.65;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--ledger); text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+a:hover { color: var(--ledger-hover); text-decoration-thickness: 2px; }
+:focus-visible { outline: 3px solid var(--older); outline-offset: 3px; border-radius: 3px; }
+p { margin: 0 0 1rem; max-width: var(--measure); }
+strong { font-weight: 600; }
+
+.skip { position: absolute; left: -999px; top: 0; background: var(--ledger); color: var(--on-ledger); padding: 0.5rem 1rem; font-family: var(--sans); z-index: 10; }
+.skip:focus { left: 1rem; top: 1rem; }
+
+.wrap { max-width: 74rem; margin: 0 auto; padding: 0 1.5rem; }
+
+/* Header */
+.site-head { border-bottom: 1px solid var(--rule); }
+.site-head .wrap { display: flex; align-items: center; justify-content: space-between; gap: 1rem 2rem; flex-wrap: wrap; padding-top: 1rem; padding-bottom: 1rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.6rem; font-family: var(--sans); font-weight: 700; font-size: 1.125rem; letter-spacing: -0.01em; color: var(--ink); text-decoration: none; }
+.brand:hover { color: var(--ink); }
+.brand svg { flex: none; }
+.site-nav ul { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; list-style: none; margin: 0; padding: 0; font-family: var(--sans); font-size: 0.95rem; }
+.site-nav a { color: var(--ink-2); text-decoration: none; }
+.site-nav a:hover { color: var(--ink); text-decoration: underline; }
+
+/* Hero */
+.hero { padding: 3.5rem 0 3rem; }
+.hero h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(2rem, 1.2rem + 3.2vw, 3.5rem);
+  line-height: 1.08;
+  letter-spacing: -0.025em;
+  max-width: 25ch;
+  margin: 0 0 1.5rem;
+  text-wrap: balance;
+}
+.hero .lede { font-size: 1.25rem; line-height: 1.55; color: var(--ink-2); max-width: 38rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 2rem 0 0; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+  min-height: 2.75rem; padding: 0.6rem 1.2rem;
+  font-family: var(--sans); font-weight: 600; font-size: 1rem; line-height: 1.2;
+  border-radius: 6px; text-decoration: none;
+  border: 1.5px solid var(--ink); color: var(--ink); background: transparent;
+}
+.btn:hover { background: var(--tint); color: var(--ink); text-decoration: none; }
+.btn.primary { background: var(--ledger); border-color: var(--ledger); color: var(--on-ledger); }
+.btn.primary:hover { background: var(--ledger-hover); border-color: var(--ledger-hover); color: var(--on-ledger); }
+
+/* Figures (chart panels) */
+.figure {
+  margin: 3rem 0 0;
+  background: var(--panel);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+  padding: 1.75rem 1.75rem 1.25rem;
+  font-family: var(--sans);
+}
+.fig-title { font-size: 1.125rem; font-weight: 600; line-height: 1.35; margin: 0; letter-spacing: -0.005em; }
+.fig-sub { font-size: 0.95rem; color: var(--ink-2); margin: 0.25rem 0 0; max-width: 46rem; line-height: 1.5; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; list-style: none; margin: 1.25rem 0 0; padding: 0; font-size: 0.9rem; color: var(--ink-2); }
+.legend li { display: inline-flex; align-items: center; gap: 0.5rem; }
+.key-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.key-bar { width: 18px; height: 12px; border-radius: 0 3px 3px 0; display: inline-block; }
+.key-whisker { width: 18px; height: 10px; display: inline-block; border-left: 1.5px solid var(--whisker); border-right: 1.5px solid var(--whisker); background: linear-gradient(var(--whisker), var(--whisker)) center / 100% 1.5px no-repeat; }
+.key-tick { width: 3px; height: 16px; display: inline-block; background: var(--ink); border-radius: 1px; }
+.fig-foot { font-size: 0.875rem; color: var(--ink-3); margin: 1.25rem 0 0; max-width: 52rem; line-height: 1.5; }
+.figure details { margin-top: 1rem; border-top: 1px solid var(--grid); padding-top: 0.75rem; }
+.figure summary { cursor: pointer; font-size: 0.9rem; font-weight: 500; color: var(--ledger); width: fit-content; }
+.figure details table { margin-top: 0.75rem; }
+
+/* Tooltip shared */
+.tip { position: relative; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%);
+  width: max-content; max-width: 16rem;
+  background: var(--ink); color: var(--paper);
+  font-family: var(--sans); font-size: 0.8125rem; line-height: 1.4; font-weight: 400;
+  padding: 0.45rem 0.6rem; border-radius: 6px;
+  pointer-events: none; display: none; z-index: 5; white-space: normal; text-align: left;
+}
+.tip:hover::after, .tip:focus-visible::after { display: block; }
+.tip.end::after { left: auto; right: -11px; transform: none; }
+
+/* Dumbbell (hero chart) */
+.db { margin-top: 1.5rem; }
+.db-axis, .db-row { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr) 12.5rem; column-gap: 1.25rem; align-items: center; }
+.db-axis { height: 1.5rem; font-size: 0.8125rem; color: var(--ink-3); }
+.db-ticks { position: relative; height: 100%; }
+.db-ticks span { position: absolute; left: calc(var(--t) / 60 * 100%); transform: translateX(-50%); bottom: 0; }
+.db-row { min-height: 4.75rem; }
+.db-label { font-weight: 600; font-size: 1rem; line-height: 1.3; }
+.db-track {
+  position: relative; height: 3.25rem;
+  background:
+    repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px calc(100% / 6));
+  border-right: 1px solid var(--grid);
+}
+.db-row + .db-row .db-track { border-top: 0; }
+.db-link {
+  position: absolute; top: 50%; height: 3px; margin-top: -1.5px; border-radius: 2px;
+  left: calc(var(--a) / 60 * 100%);
+  width: calc((var(--b) - var(--a)) / 60 * 100%);
+  background: var(--ink-3);
+}
+.db-dot {
+  position: absolute; top: 50%; left: calc(var(--v) / 60 * 100%);
+  width: 22px; height: 22px; margin: -11px 0 0 -11px;
+  border-radius: 50%; border: 3px solid var(--panel);
+  box-shadow: 0 0 0 1px var(--panel);
+  cursor: default;
+}
+.db-dot.young { background: var(--young); }
+.db-dot.older { background: var(--older); }
+.db-dot::before { content: ""; position: absolute; inset: -10px; border-radius: 50%; }
+.db-val { position: absolute; top: calc(50% + 15px); left: calc(var(--v) / 60 * 100%); transform: translateX(-50%); font-size: 0.8125rem; font-weight: 600; color: var(--ink); white-space: nowrap; }
+.db-val.up { top: auto; bottom: calc(50% + 15px); }
+.db-gap { font-size: 0.95rem; line-height: 1.35; }
+.db-gap b { display: block; font-size: 1.5rem; font-weight: 600; letter-spacing: -0.015em; }
+.db-gap span { color: var(--ink-3); font-size: 0.8125rem; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .db-row.fixed .db-dot.young, .db-row.fixed .db-val.young-val { animation: slide-v 1.4s cubic-bezier(.2,.7,.2,1) 0.9s both; }
+  .db-row.fixed .db-link { animation: slide-a 1.4s cubic-bezier(.2,.7,.2,1) 0.9s both; }
+  .db-row.fixed .db-gap { animation: appear 0.6s ease-out 2.1s both; }
+  @keyframes slide-v { from { --v: 28.41; } }
+  @keyframes slide-a { from { --a: 28.41; } }
+  @keyframes appear { from { opacity: 0; } }
+}
+
+/* Age band bars */
+.bars { margin-top: 1.5rem; }
+.bar-axis, .bar-row { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) 4.5rem 4.5rem; column-gap: 1rem; align-items: center; }
+.bar-axis { font-size: 0.8125rem; color: var(--ink-3); height: 1.5rem; }
+.bar-axis .h { text-align: right; }
+.bar-ticks { position: relative; height: 100%; }
+.bar-ticks span { position: absolute; left: calc(var(--t) / 80 * 100%); transform: translateX(-50%); bottom: 0; }
+.bar-ticks span:first-child { transform: none; }
+.bar-row { min-height: 2.9rem; }
+.bar-label { font-size: 0.95rem; font-weight: 500; line-height: 1.25; }
+.bar-label small { display: block; color: var(--ink-3); font-weight: 400; font-size: 0.8125rem; }
+.bar-track { position: relative; height: 2.5rem; background: repeating-linear-gradient(to right, var(--grid) 0 1px, transparent 1px calc(100% / 8)); border-right: 1px solid var(--grid); }
+.bar-fill { position: absolute; left: 0; top: 50%; height: 18px; margin-top: -9px; width: calc(var(--v) / 80 * 100%); border-radius: 0 4px 4px 0; }
+.bar-fill.young { background: var(--young); }
+.bar-fill.older { background: var(--older); }
+.bar-ci { position: absolute; top: 50%; height: 12px; margin-top: -6px; left: calc(var(--lo) / 80 * 100%); width: calc((var(--hi) - var(--lo)) / 80 * 100%); border-left: 1.5px solid var(--whisker); border-right: 1.5px solid var(--whisker); background: linear-gradient(var(--whisker), var(--whisker)) center / 100% 1.5px no-repeat; }
+.bar-repaid { position: absolute; top: 50%; height: 26px; margin-top: -13px; width: 3px; margin-left: -1.5px; left: calc(var(--r) / 80 * 100%); background: var(--ink); border-radius: 1px; box-shadow: 0 0 0 2px var(--panel); }
+.bar-hit { position: absolute; inset: 0; }
+.bar-num { text-align: right; font-size: 0.95rem; }
+.bar-num.muted { color: var(--ink-2); }
+
+/* Sections with margin notes */
+main section { padding: 4.5rem 0 0; scroll-margin-top: 1rem; }
+.sec-head h2 {
+  font-family: var(--sans); font-weight: 600;
+  font-size: clamp(1.75rem, 1.3rem + 1.4vw, 2.375rem); line-height: 1.12; letter-spacing: -0.02em;
+  margin: 0 0 0.75rem; max-width: 24ch;
+}
+.sec-head p { color: var(--ink-2); font-size: 1.1875rem; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 4rem; margin-top: 2rem; }
+.row > * { min-width: 0; }
+.row > .main > :last-child { margin-bottom: 0; }
+.note {
+  font-family: var(--sans); font-size: 0.9rem; line-height: 1.55; color: var(--ink-2);
+  border-left: 2px solid var(--ledger); padding: 0.1rem 0 0.1rem 1rem; margin: 1rem 0 0;
+  max-width: var(--measure);
+}
+.note p { margin: 0 0 0.5rem; }
+.note p:last-child { margin: 0; }
+.note b { color: var(--ink); font-weight: 600; }
+@media (min-width: 64rem) {
+  .row { grid-template-columns: minmax(0, var(--measure)) minmax(var(--note), 1fr); }
+  .row > .note { margin-top: 0.35rem; align-self: start; max-width: 17rem; }
+  .row > .span { grid-column: 1 / -1; }
+}
+h3 {
+  font-family: var(--sans); font-weight: 600; font-size: 1.3125rem; line-height: 1.3; letter-spacing: -0.01em;
+  margin: 0 0 0.5rem; max-width: var(--measure);
+}
+
+/* Question */
+.big-q {
+  font-family: var(--serif); font-size: clamp(1.375rem, 1.1rem + 0.9vw, 1.75rem); line-height: 1.4;
+  font-style: italic; max-width: 36rem; margin: 0 0 2rem;
+}
+ol.questions { margin: 0; padding-left: 1.4rem; max-width: var(--measure); }
+ol.questions li { padding-left: 0.4rem; margin-bottom: 0.6rem; }
+ol.questions li::marker { font-family: var(--sans); font-weight: 600; color: var(--ink-2); font-variant-numeric: normal; }
+
+/* Data facts */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 1.5rem 2rem; margin: 0; padding: 1.5rem 0; border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); font-family: var(--sans); }
+.facts div { margin: 0; }
+.facts dt { font-size: 0.875rem; color: var(--ink-2); margin-top: 0.15rem; }
+.facts dd { margin: 0; font-size: 1.875rem; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; order: -1; }
+.facts div { display: flex; flex-direction: column; }
+
+/* Cost rule */
+.rule-box { font-family: var(--sans); background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 1.5rem 1.75rem; margin: 0 0 1rem; max-width: var(--measure); }
+.rule-box .eq { font-family: var(--serif); font-size: 1.375rem; line-height: 1.5; margin: 0.5rem 0; }
+.rule-box .eq i { font-style: italic; }
+.rule-box .frac { display: inline-flex; flex-direction: column; vertical-align: middle; text-align: center; font-size: 1.1rem; line-height: 1.1; margin: 0 0.15em; }
+.rule-box .frac span:first-child { border-bottom: 1.5px solid currentColor; padding: 0 0.2em; }
+.rule-box p { font-size: 0.975rem; color: var(--ink-2); margin: 0.75rem 0 0; }
+.rule-box .result { font-size: 1.125rem; color: var(--ink); font-weight: 600; margin-top: 0.75rem; }
+
+ol.steps { list-style: none; counter-reset: step; margin: 0; padding: 0; max-width: var(--measure); }
+ol.steps li { counter-increment: step; display: grid; grid-template-columns: 2.25rem 1fr; gap: 0 0.75rem; padding: 1rem 0; border-top: 1px solid var(--grid); }
+ol.steps li:last-child { border-bottom: 1px solid var(--grid); }
+ol.steps li::before { content: counter(step); font-family: var(--sans); font-weight: 600; font-size: 0.95rem; color: var(--on-ledger); background: var(--ledger); width: 1.75rem; height: 1.75rem; border-radius: 50%; display: grid; place-items: center; margin-top: 0.2rem; }
+ol.steps b { font-family: var(--sans); font-weight: 600; display: block; font-size: 1.0625rem; }
+ol.steps span { color: var(--ink-2); font-size: 1.0625rem; }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 0; border-top: 1.5px solid var(--ink); }
+.table-wrap:focus-visible { outline-offset: 2px; }
+table { border-collapse: collapse; width: 100%; font-family: var(--sans); font-size: 0.925rem; line-height: 1.4; }
+caption { text-align: left; font-weight: 600; font-size: 1.0625rem; padding: 0 0 0.75rem; caption-side: top; }
+th, td { padding: 0.65rem 0.75rem; border-bottom: 1px solid var(--grid); vertical-align: top; text-align: left; }
+th { font-weight: 600; font-size: 0.8125rem; color: var(--ink-2); line-height: 1.3; }
+thead th { vertical-align: bottom; border-bottom: 1px solid var(--rule); }
+td.n, th.n { text-align: right; white-space: nowrap; }
+tbody th { font-size: 0.925rem; color: var(--ink); font-weight: 600; }
+tr.chosen th, tr.chosen td { background: var(--tint); }
+tr.base th, tr.base td { color: var(--ink-2); }
+tr.base th { font-weight: 500; }
+td small, th small { display: block; color: var(--ink-3); font-weight: 400; font-size: 0.8125rem; }
+.figure details table th, .figure details table td { padding: 0.45rem 0.6rem; }
+
+/* Findings */
+.finding { margin-top: 3rem; }
+.finding:first-of-type { margin-top: 2.5rem; }
+
+/* Links */
+.links { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 0; border-top: 1px solid var(--rule); font-family: var(--sans); }
+.links li { border-bottom: 1px solid var(--rule); }
+.links a { display: block; padding: 1.1rem 1.25rem 1.1rem 0; text-decoration: none; color: var(--ink); }
+.links a:hover { background: var(--tint); }
+.links a b { display: block; font-weight: 600; font-size: 1.0625rem; color: var(--ledger); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.18em; }
+.links a:hover b { text-decoration-thickness: 2px; }
+.links a span { display: block; font-size: 0.9rem; color: var(--ink-2); margin-top: 0.2rem; line-height: 1.45; }
+.links a { padding-right: 2rem; }
+
+.disclaimer { margin-top: 2rem; padding: 1.5rem 1.75rem; border: 1.5px solid var(--ink); border-radius: 12px; max-width: 48rem; }
+.disclaimer p { font-size: 1.0625rem; }
+.disclaimer p:last-child { margin-bottom: 0; }
+
+.site-foot { margin-top: 6rem; border-top: 1px solid var(--rule); padding: 2rem 0 3rem; font-family: var(--sans); font-size: 0.9rem; color: var(--ink-2); }
+.site-foot p { max-width: 52rem; margin-bottom: 0.5rem; }
+
+/* Small screens */
+@media (max-width: 47.99rem) {
+  body { font-size: 1.0625rem; }
+  .hero { padding-top: 3rem; }
+  .figure { padding: 1.25rem 1rem 1rem; margin-left: -0.5rem; margin-right: -0.5rem; }
+  .db-axis, .db-row { grid-template-columns: minmax(0, 1fr); }
+  .db-axis > :first-child, .db-axis > :last-child { display: none; }
+  .db-row { padding: 0.75rem 0 0.25rem; row-gap: 0.25rem; }
+  .db-track { height: 3.75rem; }
+  .db-gap b { display: inline; font-size: 1.25rem; margin-right: 0.35rem; }
+  .bar-axis, .bar-row { grid-template-columns: 4.75rem minmax(0, 1fr) 3.6rem 3.4rem; column-gap: 0.6rem; }
+  .bar-ticks .minor { display: none; }
+  .bar-ticks span:last-child { transform: translateX(-100%); }
+  .bar-axis .h { font-size: 0.75rem; }
+  .bar-num { font-size: 0.875rem; }
+  .site-nav ul { gap: 0.25rem 1rem; }
+}
+@media (forced-colors: active) {
+  .db-dot, .bar-fill, .key-dot, .key-bar { forced-color-adjust: none; border: 2px solid CanvasText; }
+}
+@media print {
+  .site-nav, .actions, .skip { display: none; }
+  .figure { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="LoanChecker, back to top">
+      <svg width="30" height="16" viewBox="0 0 30 16" aria-hidden="true"><path d="M7 8h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="7" cy="8" r="5.5" fill="var(--young)"/><circle cx="23" cy="8" r="5.5" fill="var(--older)"/></svg>
+      LoanChecker
+    </a>
+    <nav class="site-nav" aria-label="Sections">
+      <ul>
+        <li><a href="#question">Question</a></li>
+        <li><a href="#method">Method</a></li>
+        <li><a href="#models">Models</a></li>
+        <li><a href="#findings">Findings</a></li>
+        <li><a href="#fixes">Fixes</a></li>
+        <li><a href="#limits">Limits</a></li>
+        <li><a href="#links">Notebook and demo</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap">
+
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <h1 id="hero-title">Of the applicants who went on to repay, the model approved 28% of under 25s and 48% of everyone older.</h1>
+      <p class="lede">LoanChecker is an explainable credit risk model with a fairness audit built in. Using 1,000 historical loans from the UCI German Credit dataset, it traces where that age gap comes from and tests whether it can be closed without making lending more expensive.</p>
+      <div class="actions">
+        <a class="btn primary" href="https://claude.ai/artifact/Nh2A6yfdTzJ1XhStp2k1Fs">Try the interactive demo</a>
+        <a class="btn" href="https://github.com/programrizz/LoanChecker_v2.0/blob/main/loan_fairness_audit_FINAL_v3.ipynb">Read the notebook</a>
+        <a class="btn" href="https://colab.research.google.com/github/programrizz/LoanChecker_v2.0/blob/main/loan_fairness_audit_FINAL_v3.ipynb">Run it in Google Colab</a>
+      </div>
+
+      <figure class="figure" aria-labelledby="db-title" aria-describedby="db-sub">
+        <p class="fig-title" id="db-title">Approval rate among applicants who repaid</p>
+        <p class="fig-sub" id="db-sub">Logistic regression at the 5/6 cut-off. Every prediction was made on data the model had not seen during training.</p>
+        <ul class="legend">
+          <li><span class="key-dot" style="background:var(--young)"></span>Under 25</li>
+          <li><span class="key-dot" style="background:var(--older)"></span>25 or older</li>
+        </ul>
+        <div class="db" role="group" aria-label="Dumbbell chart comparing approval rates for good risks by age, before and after the fix">
+          <div class="db-axis" aria-hidden="true">
+            <span></span>
+            <div class="db-ticks">
+              <span style="--t:0">0%</span><span style="--t:10">10%</span><span style="--t:20">20%</span><span style="--t:30">30%</span><span style="--t:40">40%</span><span style="--t:50">50%</span><span style="--t:60">60%</span>
+            </div>
+            <span></span>
+          </div>
+          <div class="db-row">
+            <div class="db-label">Original model</div>
+            <div class="db-track">
+              <span class="db-link" style="--a:28.41;--b:47.88"></span>
+              <span class="db-dot young tip" tabindex="0" role="img" style="--v:28.41" aria-label="Original model, under 25: 28.4% of good risks approved (25 of 88)" data-tip="Under 25: 25 of 88 good risks approved (28.4%)"></span>
+              <span class="db-dot older tip end" tabindex="0" role="img" style="--v:47.88" aria-label="Original model, 25 or older: 47.9% of good risks approved" data-tip="25 or older: 47.9% of good risks approved"></span>
+              <span class="db-val" style="--v:28.41" aria-hidden="true">28.4%</span>
+              <span class="db-val" style="--v:47.88" aria-hidden="true">47.9%</span>
+            </div>
+            <p class="db-gap"><b>19.5 point gap</b> <span>95% interval +8.8 to +29.7</span></p>
+          </div>
+          <div class="db-row fixed">
+            <div class="db-label">With the fix</div>
+            <div class="db-track">
+              <span class="db-link" style="--a:45.45;--b:47.88"></span>
+              <span class="db-dot young tip" tabindex="0" role="img" style="--v:45.45" aria-label="With the fix, under 25: 45.5% of good risks approved (40 of 88)" data-tip="Under 25: 40 of 88 good risks approved (45.5%)"></span>
+              <span class="db-dot older tip end" tabindex="0" role="img" style="--v:47.88" aria-label="With the fix, 25 or older: 47.9% of good risks approved, unchanged" data-tip="25 or older: 47.9% of good risks approved (unchanged)"></span>
+              <span class="db-val young-val" style="--v:45.45" aria-hidden="true">45.5%</span>
+              <span class="db-val up" style="--v:47.88" aria-hidden="true">47.9%</span>
+            </div>
+            <p class="db-gap"><b>2.4 point gap</b> <span>95% interval −8.9 to +14.0</span></p>
+          </div>
+        </div>
+        <p class="fig-foot">The fix lowers the approval line for under 25s only, with the cut-off chosen out of fold. It changes cost by no measurable amount (95% interval −17 to +21 cost points), but it has a trade-off for applicants just over 25, set out in <a href="#fixes">Fixes</a>.</p>
+        <details>
+          <summary>Show the numbers</summary>
+          <div class="table-wrap" role="region" aria-label="Numbers behind the chart" tabindex="0">
+            <table>
+              <thead><tr><th scope="col">Policy</th><th scope="col" class="n">Under 25</th><th scope="col" class="n">25 or older</th><th scope="col" class="n">Gap (points)</th><th scope="col" class="n">95% interval</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Original model</th><td class="n">28.4%</td><td class="n">47.9%</td><td class="n">19.5</td><td class="n">+8.8 to +29.7</td></tr>
+                <tr><th scope="row">With the fix</th><td class="n">45.5%</td><td class="n">47.9%</td><td class="n">2.4</td><td class="n">−8.9 to +14.0</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </figure>
+    </section>
+
+    <section id="question" aria-labelledby="q-title">
+      <div class="sec-head">
+        <h2 id="q-title">The question</h2>
+      </div>
+      <p class="big-q">Can a credit risk model accurately pick out the applicants likely to repay while systematically disadvantaging younger ones, and if it does, can that be fixed without raising the lender's costs?</p>
+      <div class="row">
+        <div class="main">
+          <p>The project breaks that into five research questions:</p>
+          <ol class="questions">
+            <li>How effectively can machine learning models distinguish between applicants who repay and those who default?</li>
+            <li>Do applicants under 25 experience systematically lower approval rates?</li>
+            <li>Does removing age from the model eliminate the observed disparity?</li>
+            <li>Can alternative decision thresholds improve fairness while maintaining comparable lending costs?</li>
+            <li>What are the limitations and potential consequences of these interventions?</li>
+          </ol>
+        </div>
+        <aside class="note" aria-label="Note on scope">
+          <p><b>This is a research prototype.</b> It is not a production credit scoring system, and nothing here is a recommendation for real lending policy.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="method" aria-labelledby="m-title">
+      <div class="sec-head">
+        <h2 id="m-title">Method</h2>
+        <p>One small, well studied dataset, three models, a cost rule from the dataset's own documentation, and a fairness audit run on predictions the models never trained on.</p>
+      </div>
+
+      <dl class="facts">
+        <div><dt>historical loans</dt><dd>1,000</dd></div>
+        <div><dt>repaid as agreed</dt><dd>700</dd></div>
+        <div><dt>did not repay</dt><dd>300</dd></div>
+        <div><dt>applicants under 25</dt><dd>149</dd></div>
+        <div><dt>details per applicant</dt><dd>20</dd></div>
+      </dl>
+
+      <div class="row">
+        <div class="main">
+          <p>The data is the Statlog German Credit dataset from the UCI Machine Learning Repository: loans made by a bank in southern Germany between 1973 and 1975, each labelled as a good risk (repaid) or a bad risk. The original codebook mislabels several categories, so every label was checked against the corrected South German Credit codebook (Grömping, 2019) before any modelling.</p>
+        </div>
+        <aside class="note" aria-label="Note on labels">
+          <p><b>Why the label check matters.</b> With the old labels, "no checking account" looked like the strongest sign of a good borrower. That code really means "200 DM or more, or a salary account". The numbers don't change, but explanations built on the old labels would be wrong.</p>
+        </aside>
+      </div>
+
+      <div class="row">
+        <div class="main">
+          <h3>The 5:1 cost rule</h3>
+          <div class="rule-box" role="group" aria-label="Derivation of the approval threshold">
+            <p style="margin-top:0">The dataset's documentation says approving a bad risk costs 5 times as much as rejecting a good one. If the model gives an applicant a probability <i>p</i> of repaying, lend only when the expected cost of lending is lower:</p>
+            <p class="eq" aria-label="5 times 1 minus p is less than p, so p is greater than five sixths">5(1 − <i>p</i>) &lt; <i>p</i> &nbsp;so&nbsp; <i>p</i> &gt; <span class="frac" aria-hidden="true"><span>5</span><span>6</span></span></p>
+            <p class="result">The model must be about 83.3% sure before it lends.</p>
+            <p>This threshold reflects the assumed relative costs. It is not a universal lending threshold.</p>
+          </div>
+        </div>
+        <aside class="note" aria-label="Note on the threshold">
+          <p><b>Why this one number matters for fairness.</b> A strict line turns away many borderline applicants, and young applicants are more likely to be borderline.</p>
+        </aside>
+      </div>
+
+      <div class="row">
+        <div class="main">
+          <h3>How the audit runs</h3>
+          <ol class="steps">
+            <li><div><b>Translate and check the data</b><span>Codes such as A11 become plain English, matched to the corrected codebook.</span></div></li>
+            <li><div><b>Train three models with nested cross validation</b><span>5 folds: train on 800 applicants, predict the hidden 200, repeat until everyone has been predicted once while unseen. An inner loop tunes each model's regularisation.</span></div></li>
+            <li><div><b>Apply the 5/6 cut-off and compare costs</b><span>Against two baselines: approve everyone and reject everyone.</span></div></li>
+            <li><div><b>Measure approvals by age</b><span>Under 25 against 25 or older, with 95% intervals from 2,000 bootstrap resamples.</span></div></li>
+            <li><div><b>Trace the gap and test proxies</b><span>Split the score gap detail by detail, then check whether other details give age away.</span></div></li>
+            <li><div><b>Test fixes and their cost</b><span>Delete age, delete age and its proxies, reweigh the training data, or use a separate threshold for under 25s.</span></div></li>
+            <li><div><b>Stress the result</b><span>A flip test, calibration by age, a like for like comparison, a cliff edge check at 25, and a recession simulation.</span></div></li>
+          </ol>
+        </div>
+        <aside class="note" aria-label="Note on the main fairness measure">
+          <p><b>The main fairness measure</b> is the approval rate among good risks: of the people who really did repay, what share got a loan? It asks exactly whether creditworthy under 25s are penalised, and it doesn't punish a model for real differences in repayment.</p>
+          <p>Its weakness is that it trusts the good and bad labels.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="models" aria-labelledby="mod-title">
+      <div class="sec-head">
+        <h2 id="mod-title">Model comparison</h2>
+        <p>Logistic regression is the principal model: it had the lowest cost, and every weight it uses can be read directly.</p>
+      </div>
+      <div class="row">
+        <div class="span">
+          <div class="table-wrap" role="region" aria-label="Model comparison table" tabindex="0">
+            <table>
+              <caption>Three models and two baselines, all scored on unseen data</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col" class="n">ROC AUC</th>
+                  <th scope="col" class="n">Cost at 5/6<small>lower is better</small></th>
+                  <th scope="col" class="n">Accuracy at 5/6</th>
+                  <th scope="col" class="n">Accuracy at 50%</th>
+                  <th scope="col" class="n">Approval rate</th>
+                  <th scope="col" class="n">Overfitting<small>training minus unseen accuracy</small></th>
+                  <th scope="col" class="n">Age gap among good risks<small>points, at 5/6</small></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="chosen"><th scope="row">Logistic regression<small>chosen</small></th><td class="n">0.787</td><td class="n">547</td><td class="n">58.5%</td><td class="n">75.0%</td><td class="n">35.1%</td><td class="n">3.9 pts</td><td class="n">+19.5</td></tr>
+                <tr><th scope="row">Random forest</th><td class="n">0.777</td><td class="n">553</td><td class="n">55.5%</td><td class="n">75.8%</td><td class="n">30.9%</td><td class="n">20.4 pts</td><td class="n">+31.8</td></tr>
+                <tr><th scope="row">Gradient boosting</th><td class="n">0.767</td><td class="n">552</td><td class="n">57.6%</td><td class="n">74.0%</td><td class="n">34.0%</td><td class="n">8.8 pts</td><td class="n">+26.9</td></tr>
+                <tr class="base"><th scope="row">Approve everyone</th><td class="n">n/a</td><td class="n">1,500</td><td class="n">70.0%</td><td class="n">n/a</td><td class="n">100%</td><td class="n">n/a</td><td class="n">n/a</td></tr>
+                <tr class="base"><th scope="row">Reject everyone</th><td class="n">n/a</td><td class="n">700</td><td class="n">30.0%</td><td class="n">n/a</td><td class="n">0%</td><td class="n">n/a</td><td class="n">n/a</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="main">
+          <h3>Accuracy and cost pull in opposite directions</h3>
+          <p>At a 50% threshold the models beat approve everyone on accuracy, about 75% against 70%, but they cost far more than rejecting everyone. At the 5/6 cut-off the cost drops well below 700, while accuracy falls under 70%, because the model now turns away many good applicants to avoid the expensive bad ones. Which is better depends on what the bank cares about, so both are reported.</p>
+          <p>Against the reject everyone baseline of 700, logistic regression saves 85 to 215 cost points (95% interval). It was also the least overfitted: random forest scored 96% on the data it trained on and 76% on data it hadn't seen.</p>
+        </div>
+        <aside class="note" aria-label="Note on cost">
+          <p><b>Cost</b> is scaled to 1,000 applicants: 5 points for each bad loan approved and 1 point for each good applicant rejected.</p>
+          <p>The more flexible models were also less fair: their age gaps among good risks were 26.9 and 31.8 points.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="findings" aria-labelledby="f-title">
+      <div class="sec-head">
+        <h2 id="f-title">Key fairness findings</h2>
+        <p>Under 25s did repay less often than older applicants. The audit asks whether the model's gap is bigger than that real difference, and why.</p>
+      </div>
+
+      <figure class="figure" aria-labelledby="bars-title" aria-describedby="bars-sub">
+        <p class="fig-title" id="bars-title">Approval rate by age band, against the share who actually repaid</p>
+        <p class="fig-sub" id="bars-sub">Logistic regression at the 5/6 cut-off, all 1,000 applicants. Applicant counts under each band.</p>
+        <ul class="legend">
+          <li><span class="key-bar" style="background:var(--young)"></span>Approved, under 25</li>
+          <li><span class="key-bar" style="background:var(--older)"></span>Approved, 25 or older</li>
+          <li><span class="key-whisker"></span>95% interval</li>
+          <li><span class="key-tick"></span>Share who actually repaid</li>
+        </ul>
+        <div class="bars" role="group" aria-label="Bar chart of approval rate by age band">
+          <div class="bar-axis" aria-hidden="true">
+            <span></span>
+            <div class="bar-ticks"><span style="--t:0">0%</span><span class="minor" style="--t:20">20%</span><span style="--t:40">40%</span><span class="minor" style="--t:60">60%</span><span style="--t:80">80%</span></div>
+            <span class="h">Approved</span><span class="h">Repaid</span>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">Under 25<small>149</small></div>
+            <div class="bar-track">
+              <span class="bar-fill young" style="--v:18.79"></span>
+              <span class="bar-ci" style="--lo:13;--hi:25"></span>
+              <span class="bar-repaid" style="--r:59.06"></span>
+              <span class="bar-hit tip" tabindex="0" role="img" aria-label="Under 25: 28 of 149 approved, 18.8%, 95% interval 13% to 25%. 59.1% actually repaid." data-tip="Under 25: 28 of 149 approved (18.8%, interval 13% to 25%). 59.1% repaid."></span>
+            </div>
+            <span class="bar-num">18.8%</span><span class="bar-num muted">59.1%</span>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">25 to 29<small>222</small></div>
+            <div class="bar-track">
+              <span class="bar-fill older" style="--v:27.03"></span>
+              <span class="bar-ci" style="--lo:21;--hi:33"></span>
+              <span class="bar-repaid" style="--r:65.77"></span>
+              <span class="bar-hit tip" tabindex="0" role="img" aria-label="25 to 29: 60 of 222 approved, 27.0%, 95% interval 21% to 33%. 65.8% actually repaid." data-tip="25 to 29: 60 of 222 approved (27.0%, interval 21% to 33%). 65.8% repaid."></span>
+            </div>
+            <span class="bar-num">27.0%</span><span class="bar-num muted">65.8%</span>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">30 to 39<small>330</small></div>
+            <div class="bar-track">
+              <span class="bar-fill older" style="--v:39.09"></span>
+              <span class="bar-ci" style="--lo:34;--hi:44"></span>
+              <span class="bar-repaid" style="--r:74.24"></span>
+              <span class="bar-hit tip" tabindex="0" role="img" aria-label="30 to 39: 129 of 330 approved, 39.1%, 95% interval 34% to 44%. 74.2% actually repaid." data-tip="30 to 39: 129 of 330 approved (39.1%, interval 34% to 44%). 74.2% repaid."></span>
+            </div>
+            <span class="bar-num">39.1%</span><span class="bar-num muted">74.2%</span>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">40 to 59<small>248</small></div>
+            <div class="bar-track">
+              <span class="bar-fill older" style="--v:44.76"></span>
+              <span class="bar-ci" style="--lo:39;--hi:51"></span>
+              <span class="bar-repaid" style="--r:73.79"></span>
+              <span class="bar-hit tip" tabindex="0" role="img" aria-label="40 to 59: 111 of 248 approved, 44.8%, 95% interval 39% to 51%. 73.8% actually repaid." data-tip="40 to 59: 111 of 248 approved (44.8%, interval 39% to 51%). 73.8% repaid."></span>
+            </div>
+            <span class="bar-num">44.8%</span><span class="bar-num muted">73.8%</span>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label">60 or older<small>51</small></div>
+            <div class="bar-track">
+              <span class="bar-fill older" style="--v:45.10"></span>
+              <span class="bar-ci" style="--lo:31;--hi:59"></span>
+              <span class="bar-repaid" style="--r:74.51"></span>
+              <span class="bar-hit tip" tabindex="0" role="img" aria-label="60 or older: 23 of 51 approved, 45.1%, 95% interval 31% to 59%. 74.5% actually repaid." data-tip="60 or older: 23 of 51 approved (45.1%, interval 31% to 59%). 74.5% repaid."></span>
+            </div>
+            <span class="bar-num">45.1%</span><span class="bar-num muted">74.5%</span>
+          </div>
+        </div>
+        <details>
+          <summary>Show the numbers</summary>
+          <div class="table-wrap" role="region" aria-label="Approval by age band" tabindex="0">
+            <table>
+              <thead><tr><th scope="col">Age band</th><th scope="col" class="n">Applicants</th><th scope="col" class="n">Approved</th><th scope="col" class="n">Approval rate</th><th scope="col" class="n">95% interval</th><th scope="col" class="n">Actually repaid</th><th scope="col" class="n">Repaid and approved</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Under 25</th><td class="n">149</td><td class="n">28</td><td class="n">18.8%</td><td class="n">13% to 25%</td><td class="n">59.1%</td><td class="n">25 of 88</td></tr>
+                <tr><th scope="row">25 to 29</th><td class="n">222</td><td class="n">60</td><td class="n">27.0%</td><td class="n">21% to 33%</td><td class="n">65.8%</td><td class="n">51 of 146</td></tr>
+                <tr><th scope="row">30 to 39</th><td class="n">330</td><td class="n">129</td><td class="n">39.1%</td><td class="n">34% to 44%</td><td class="n">74.2%</td><td class="n">121 of 245</td></tr>
+                <tr><th scope="row">40 to 59</th><td class="n">248</td><td class="n">111</td><td class="n">44.8%</td><td class="n">39% to 51%</td><td class="n">73.8%</td><td class="n">101 of 183</td></tr>
+                <tr><th scope="row">60 or older</th><td class="n">51</td><td class="n">23</td><td class="n">45.1%</td><td class="n">31% to 59%</td><td class="n">74.5%</td><td class="n">20 of 38</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </figure>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>The gap is bigger than the real difference in repayment</h3>
+          <p>59.1% of under 25s repaid, against 71.9% of applicants 25 or older: a real difference of 12.9 points. The model's approval gap is 19.2 points (95% interval 12.0 to 26.1), and among applicants who repaid it is 19.5 points. Under 25s are approved at half the rate of older applicants, a ratio of 0.50 (0.33 to 0.68).</p>
+        </div>
+        <aside class="note" aria-label="Note on the four fifths rule">
+          <p>A ratio below 0.8 fails the <b>four fifths rule</b>, a US rule of thumb from employment law. It is used here as a yardstick, not a UK legal test.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>It doesn't depend on choosing 25</h3>
+          <p>The audit was re-run with every age cut-off from under 22 to under 35. The approval gap stayed between 15.6 and 19.5 points throughout, so the finding is not an artefact of where the line was drawn.</p>
+        </div>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>Removing age barely helps, because other details give it away</h3>
+          <p>With age deleted from the model, the overall approval gap only falls from 19.2 to 17.9 points. With age hidden, the remaining details still predict whether an applicant is under 25 with an AUC of 0.80, where 0.5 is guessing. The strongest proxies are the family status and sex code (0.68), housing (0.66) and years in the current job (0.63).</p>
+          <p>This is why simply removing a protected characteristic may not remove a disparity.</p>
+        </div>
+        <aside class="note" aria-label="Note on proxies">
+          <p><b>Deleting age and its top three proxies</b> cuts the approval gap to 12.0 points, with accuracy slipping from 58.5% to 57.2%.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>A handful of details drive the score gap</h3>
+          <p>Because a logistic regression score is a weighted sum, the average score gap between older and younger applicants splits exactly into one piece per detail. The largest pieces are checking account status (0.22 log odds), age itself (0.20), the family status and sex code (0.12), housing (0.11) and credit history (0.09).</p>
+        </div>
+        <aside class="note" aria-label="Note on which drivers are justified">
+          <p><b>A useful test for each driver:</b> does it measure whether someone can repay, or how far along in life they are? Checking account balance and credit history are about repayment. Age, job length and renting or owning mostly measure life stage.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>The model doesn't misjudge young people's risk</h3>
+          <p>The model is about equally well calibrated for both groups. Across under 25s it predicted 61.3% would repay, and 59.1% did, a difference of −2.3 points (interval −9.7 to +4.9). The gap comes from where the approval line falls: more young applicants sit just below it. In the band just under the line, 17 of 20 under 25s and 107 of 129 older applicants repaid.</p>
+        </div>
+        <aside class="note" aria-label="Note on calibration">
+          <p>With only 149 young applicants, a mismatch of up to about 10 points could still hide in the noise.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>Most of the gap survives a like for like comparison</h3>
+          <p>Comparing applicants with the same checking account status and savings band, and similar loan amounts and lengths, 11.3 points of the 19.2 point gap remain (5.1 to 17.8). Among good risks, 13.6 of the 19.5 points remain (4.7 to 23.3). Roughly 40% of the gap is explained by young applicants' different finances; the rest is not.</p>
+        </div>
+        <aside class="note" aria-label="Note on the like for like comparison">
+          <p>Which details count as legitimate is a judgement. The audit used the four most clearly about the loan and the applicant's money, and left out life stage details such as housing and job length.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>Changing only the age rarely flips a decision</h3>
+          <p>Changing nothing but an applicant's age, 2 of the 149 under 25s would switch from rejected to approved at 35, and 45 of the 851 older applicants would lose an approval at 22.</p>
+        </div>
+        <aside class="note" aria-label="Note on the flip test">
+          <p>A flip test only catches age's direct effect. A model with age deleted would pass it perfectly and still have a large gap, so passing it doesn't prove a model is fair.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>At a realistic default rate, the gap shrinks</h3>
+          <p>30% of the loans in the data went bad, but the real share is reported to be about 5%. Correcting the model's odds to a 5% base rate turns the same 5:1 rule into a cut-off of 0.38. The approval ratio rises to 0.91, and the gap among good risks falls to 4.5 points (−0.9 to +11.1). The headline numbers are a result for this oversampled data: a real bank would be less strict, and the gap smaller.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="fixes" aria-labelledby="fx-title">
+      <div class="sec-head">
+        <h2 id="fx-title">Fixes, and what they cost</h2>
+        <p>Three kinds of fix, judged on the same two things: the gap and the cost under the 5:1 rule.</p>
+      </div>
+      <div class="row">
+        <div class="span">
+          <div class="table-wrap" role="region" aria-label="Comparison of fixes" tabindex="0">
+            <table>
+              <caption>Every fix compared on the chosen model</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Option</th>
+                  <th scope="col">Uses age</th>
+                  <th scope="col" class="n">Cost</th>
+                  <th scope="col" class="n">Accuracy</th>
+                  <th scope="col" class="n">Approved<small>under 25</small></th>
+                  <th scope="col" class="n">Approved<small>25 or older</small></th>
+                  <th scope="col" class="n">Approval gap<small>points (95% interval)</small></th>
+                  <th scope="col" class="n">Ratio</th>
+                  <th scope="col" class="n">Good risk gap<small>points</small></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Original model</th><td>As an input</td><td class="n">547</td><td class="n">58.5%</td><td class="n">18.8%</td><td class="n">38.0%</td><td class="n">19.2 (12 to 26)</td><td class="n">0.50</td><td class="n">19.5</td></tr>
+                <tr><th scope="row">Age deleted</th><td>No</td><td class="n">539</td><td class="n">58.5%</td><td class="n">19.5%</td><td class="n">37.4%</td><td class="n">17.9 (11 to 25)</td><td class="n">0.52</td><td class="n">17.8</td></tr>
+                <tr><th scope="row">Age and top 3 proxies deleted</th><td>No</td><td class="n">544</td><td class="n">57.2%</td><td class="n">22.8%</td><td class="n">34.8%</td><td class="n">12.0 (4 to 19)</td><td class="n">0.66</td><td class="n">10.2</td></tr>
+                <tr><th scope="row">Age deleted and reweighing</th><td>No</td><td class="n">538</td><td class="n">58.6%</td><td class="n">22.2%</td><td class="n">37.0%</td><td class="n">14.9 (7 to 23)</td><td class="n">0.60</td><td class="n">12.8</td></tr>
+                <tr><th scope="row">Separate threshold, ratio 0.8<small>under 25 cut-off 0.76, in sample</small></th><td>Input and cut-off</td><td class="n">541</td><td class="n">59.9%</td><td class="n">30.9%</td><td class="n">38.0%</td><td class="n">7.1 (−1 to 16)</td><td class="n">0.81</td><td class="n">1.3</td></tr>
+                <tr><th scope="row">Separate threshold, equal chance for good risks<small>cut-off 0.74, in sample</small></th><td>Input and cut-off</td><td class="n">543</td><td class="n">60.1%</td><td class="n">33.6%</td><td class="n">38.0%</td><td class="n">4.4 (−4 to 13)</td><td class="n">0.88</td><td class="n">−2.1</td></tr>
+                <tr><th scope="row">Separate threshold, equal approval rates<small>cut-off 0.72, in sample</small></th><td>Input and cut-off</td><td class="n">554</td><td class="n">60.2%</td><td class="n">38.3%</td><td class="n">38.0%</td><td class="n">−0.3 (−9 to 8)</td><td class="n">1.01</td><td class="n">−6.7</td></tr>
+                <tr class="chosen"><th scope="row">Separate threshold, ratio 0.8, chosen out of fold<small>the version quoted</small></th><td>Input and cut-off</td><td class="n">547</td><td class="n">59.7%</td><td class="n">30.9%</td><td class="n">38.0%</td><td class="n">7.1 (−1 to 16)</td><td class="n">0.81</td><td class="n">2.4</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="row">
+        <div class="main">
+          <p>The three in sample separate threshold rows chose their cut-off on the same predictions they are then scored on, so their costs are slightly optimistic. The out of fold version picks the under 25 cut-off without seeing the test fold (0.74 to 0.79 across the five folds), and is the one quoted throughout.</p>
+        </div>
+        <aside class="note" aria-label="Note on reweighing">
+          <p><b>Reweighing</b> gives extra weight during training to under represented combinations, such as young applicants who repaid, so "young means risky" is harder to learn as a shortcut.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>Who the fix helps, and who it leapfrogs</h3>
+          <p>The fix approves 18 more under 25s, 15 of whom repaid. But it moves the cliff at 25 rather than removing it. It leaves 122 applicants aged 25 or older rejected with scores that would now get an under 25 approved, and 106 of them (87%) repaid. Good risks aged 25 to 29 end up approved 35% of the time, against 45% for under 25s, the lowest of any band, though that difference is within noise (−10.5 points, interval −23.2 to +3.2).</p>
+          <p>Lowering the line for everyone instead costs no more (521 against 547, difference −73 to +24) and leapfrogs nobody, but the age gap comes straight back: 19.7 points among good risks, and a ratio of 0.59.</p>
+        </div>
+        <aside class="note" aria-label="Note on the legal question">
+          <p><b>A separate age based threshold raises significant legal and regulatory questions.</b> Deciding differently because of someone's age can itself be unlawful in many countries, and a smaller measured gap doesn't make an intervention lawful or appropriate.</p>
+        </aside>
+      </div>
+
+      <div class="row finding">
+        <div class="main">
+          <h3>Does fairer lending make the bank riskier in a recession?</h3>
+          <p>A recession simulation over 20,000 possible futures, using a one factor model of shared economic shocks, compared the worst 1% of outcomes for each policy. The separate threshold fix lends to 369 people instead of 351, with the share of lending going to under 25s rising from 6.8% to 10.5%. Its 99% Value at Risk rises from 321,653 DM to 340,935 DM, or from 36.6% to 37.2% of the money lent.</p>
+        </div>
+        <aside class="note" aria-label="Note on the recession simulation">
+          <p>The strength of the shared shock (a correlation of 0.2) is an assumption the dataset can't measure, and default chances come from oversampled data, so absolute losses are too high.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="limits" aria-labelledby="l-title">
+      <div class="sec-head">
+        <h2 id="l-title">Limitations</h2>
+        <p>The results should be read in the context of the dataset, the modelling assumptions and the experimental design.</p>
+      </div>
+      <div class="row">
+        <div class="span">
+          <div class="table-wrap" role="region" aria-label="Limitations table" tabindex="0">
+            <table>
+              <thead><tr><th scope="col">Limitation</th><th scope="col">Why it matters</th><th scope="col">How to overcome it</th></tr></thead>
+              <tbody>
+                <tr><th scope="row">Small data<small>1,000 loans, 149 under 25</small></th><td>Wide confidence intervals; results could shift with more data</td><td>Repeat the audit on a larger, modern dataset</td></tr>
+                <tr><th scope="row">Old data<small>1973 to 1975, one German bank</small></th><td>Young people's finances and lending rules have changed a lot since then</td><td>Re-run on recent data and compare with how UK lenders work today</td></tr>
+                <tr><th scope="row">Oversampled bad loans<small>30% bad against a reported 5% in reality</small></th><td>Costs and default chances are inflated and approval rates too low, so the real gap may be smaller</td><td>Reweight to a realistic default rate before setting thresholds</td></tr>
+                <tr><th scope="row">Only granted loans</th><td>Rejected applicants never appear, so any past bias in who got a loan is baked into the labels</td><td>Reject inference methods, or data that includes rejected applicants</td></tr>
+                <tr><th scope="row">Broken sex variable</th><td>One code mixes women who are not single with single men, so sex or intersectional bias can't be tested</td><td>Use datasets that record sex reliably</td></tr>
+                <tr><th scope="row">Missing information</th><td>No comprehensive income and expenditure data, which a modern lender would use</td><td>Not addressed in this project</td></tr>
+                <tr><th scope="row">Fix cut-off chosen out of fold, not in a full inner loop</th><td>A little optimism could remain in the fix's results</td><td>Choose the cut-off with an inner cross validation inside each training fold</td></tr>
+                <tr><th scope="row">No real recession in the data</th><td>Tail risk numbers rely on an assumed correlation</td><td>Calibrate to historical default rates across economic cycles</td></tr>
+                <tr><th scope="row">One definition of fairness</th><td>Equal approval rates and equal chances for good risks can't always both hold, and approval rate parity alone doesn't establish that a decision is fair</td><td>Report several measures and explain the trade-off</td></tr>
+                <tr><th scope="row">Model risk</th><td>Results depend on the chosen model, cost assumptions, validation approach and threshold selection</td><td>Treat the findings as an investigation, not evidence for deployment</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="links" aria-labelledby="ln-title">
+      <div class="sec-head">
+        <h2 id="ln-title">Notebook, demo and data</h2>
+        <p>Everything behind this page is in the repository. To reproduce it, open the notebook in Colab and choose Runtime, then Run all: the data downloads automatically.</p>
+      </div>
+      <ul class="links">
+        <li><a href="https://claude.ai/artifact/Nh2A6yfdTzJ1XhStp2k1Fs"><b>Interactive LoanChecker demo</b><span>Walk through the project and try the model on an applicant.</span></a></li>
+        <li><a href="https://github.com/programrizz/LoanChecker_v2.0/blob/main/loan_fairness_audit_FINAL_v3.ipynb"><b>Jupyter notebook</b><span>The full analysis, rendered on GitHub. Section 8 has a live demo when run in Colab.</span></a></li>
+        <li><a href="https://colab.research.google.com/github/programrizz/LoanChecker_v2.0/blob/main/loan_fairness_audit_FINAL_v3.ipynb"><b>Open the notebook in Google Colab</b><span>Run every cell yourself, nothing to install locally.</span></a></li>
+        <li><a href="LoanCheck_all_results.txt"><b>Execution results</b><span>The recorded output of a full run of the notebook.</span></a></li>
+        <li><a href="https://github.com/programrizz/LoanChecker_v2.0"><b>Source repository</b><span>Notebook, results and README on GitHub.</span></a></li>
+        <li><a href="https://archive.ics.uci.edu/dataset/144/statlog+german+credit+data"><b>Statlog German Credit dataset</b><span>UCI Machine Learning Repository, dataset 144.</span></a></li>
+      </ul>
+      <div class="row">
+        <div class="main">
+          <p style="font-family:var(--sans);font-size:0.975rem;color:var(--ink-2)">Built in Python with scikit-learn, pandas, NumPy, SciPy, matplotlib, ipywidgets and ucimlrepo, in a Jupyter and Google Colab environment.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="disclaimer" aria-labelledby="d-title">
+      <div class="sec-head">
+        <h2 id="d-title">Disclaimer</h2>
+      </div>
+      <div class="disclaimer">
+        <p>LoanChecker is an experimental research prototype developed for the Veritas AI Hackathon. It is not a production ready credit scoring system and does not constitute financial advice or a recommendation to lend to or refuse any individual.</p>
+        <p>The findings are educational and research oriented. They should not be used to make actual credit decisions.</p>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p>Built for the Veritas AI International High School Hackathon 2026.</p>
+    <p>Data: Statlog (German Credit Data), UCI Machine Learning Repository. Category labels corrected using the South German Credit codebook (Grömping, 2019). Source on <a href="https://github.com/programrizz/LoanChecker_v2.0">GitHub</a>.</p>
+  </div>
+</footer>
+</body>
+</html>
